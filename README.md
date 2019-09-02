@@ -1,0 +1,1 @@
+# drone-gogs-dockerselfregister-example
