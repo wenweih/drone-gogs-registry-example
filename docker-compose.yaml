@@ -1,0 +1,109 @@
+version: '3'
+services:
+  # https://developpaper.com/build-your-own-ci-cd-system-with-drone-and-gogs/
+  drone-server:
+    container_name: 'drone-server'
+    image: drone/drone:latest
+    ports:
+      - "8080:80"
+      - 8843:443
+      - 9000
+    volumes:
+      - ./drone:/var/lib/drone/
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DRONE_OPEN=true
+      - DRONE_SERVER_HOST=drone-server
+      - DRONE_DEBUG=true
+      - DRONE_GIT_ALWAYS_AUTH=false
+      - DRONE_GOGS=true
+      - DRONE_GOGS_SKIP_VERIFY=false
+      - DRONE_GOGS_SERVER=http://gogs:{port}
+      - DRONE_PROVIDER=gogs
+      - DRONE_DATABASE_DATASOURCE=/var/lib/drone/drone.sqlite
+      - DRONE_DATABASE_DRIVER=sqlite3
+      - DRONE_SERVER_PROTO=http
+      - DRONE_RPC_SECRET=ALQU2M0KdptXUdTPKcEwHww
+      - DRONE_SECRET=ALQU2M0KdptXUdTPKcEwHww
+  gogs:
+    container_name: 'gogs'
+    image: gogs/gogs:latest
+    ports:
+      - "10022:22"
+      - "3000:3000"
+    volumes:
+      - ./data/gogs:/data
+    depends_on:
+      - mysql
+  mysql:
+    container_name: 'mysql'
+    image: mysql:5.7.16
+    volumes:
+      - ./gogs/mysql:/var/lib/mysql
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 3308:3306
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: pass
+      MYSQL_DATABASE: gogs
+      MYSQL_USER: gogs
+      MYSQL_PASSWORD: pass
+      TZ: Asia/Shanghai
+  drone-agent:
+    container_name: 'drone-agent'
+    image: drone/agent:latest
+    depends_on:
+      - drone-server
+    environment:
+      - DRONE_RPC_SERVER=http://drone-server
+      - DRONE_RPC_SECRET=ALQU2M0KdptXUdTPKcEwHww
+      - DRONE_DEBUG=true
+      - DOCKER_HOST=tcp://docker-bind:2375
+      - DRONE_SERVER=drone-server:9000
+      - DRONE_SECRET=ALQU2M0KdptXUdTPKcEwHww
+      - DRONE_MAX_PROCS=5
+  docker-bind:
+    image: docker:dind
+    container_name: 'docker-bind'
+    privileged: true
+    command: --storage-driver=overlay
+
+  # https://ijayer.github.io/post/tech/devops/docker/20181026-registry-and-webui/
+  registry-web: # Registry Web UI
+    restart: always
+    image: parabuzzle/craneoperator:latest
+    container_name: registry-web
+    ports:
+      - 5001:80
+    depends_on:
+      - registry
+    environment:
+      - REGISTRY_HOST=registry
+      - REGISTRY_PORT=5000
+      - REGISTRY_USERNAME=registry
+      - REGISTRY_PASSWORD=34BGvFKvKADpKaA3kHBE
+      - REGISTRY_PROTOCOL=https
+      # https://www.engineyard.com/blog/ruby-ssl-error-certificate-verify-failed
+      - SSL_VERIFY=false
+      - ALLOW_REGISTRY_LOGI=true
+      - REGISTRY_ALLOW_DELETE=true
+  registry:     # Priavate Registry Server
+    restart: always
+    image: registry:latest
+    container_name: registry
+    ports:
+      - 5000:5000
+    volumes:
+      - ./data/registry/data:/var/lib/registry
+      - ./data/registry/certs:/certs
+      - ./data/registry/auth:/auth
+
+    environment:
+      - REGISTRY_HTTP_SECRET=TZqPFKLjgx7jzuia99Tb
+      - REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt
+      - REGISTRY_HTTP_TLS_KEY=/certs/domain.key
+      - REGISTRY_AUTH=htpasswd
+      - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+      - REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
